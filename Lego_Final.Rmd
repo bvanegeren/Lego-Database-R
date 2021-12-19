@@ -1,0 +1,168 @@
+---
+title: "Final Project"
+subtitle: "By: Bradley Van Egeren"
+output: html_document
+---
+The goal of this project was to analyze and evaluate the LEGO Database found at https://rebrickable.com/downloads/ . There were two questions that seemed interesting to explore when I first saw the data. First, is there a relationship between the year a Lego set was made and the number of parts in the set? Second, and mor obscurely, is there a relationship between the color of a Lego part and whether or not the part was considered a spare piece (i.e. are the colors of spare pieces the same on average)? Through data wrangling, observing/visualizing statistical summaries, and using ANOVA one-way tests, I was successfully able to answer both of these questions.
+
+```{r libraries, include = FALSE}
+library(tidyverse)
+library(dplyr)
+library(knitr)
+```
+
+## Loading Data
+The first step into this data isn't very exciting, but definitely essential. I will display the more important data tables that I will be using.
+
+```{r setup, include=FALSE}
+colors <- read_csv("~/Desktop/Math 250 (Tutorial) - FALL 2021-22/Lego/colors.csv.gz")
+
+minifigs <- read_csv("~/Desktop/Math 250 (Tutorial) - FALL 2021-22/Lego/minifigs.csv.gz")
+
+elements <- read_csv("~/Desktop/Math 250 (Tutorial) - FALL 2021-22/Lego/elements.csv.gz")
+
+themes <- read_csv("~/Desktop/Math 250 (Tutorial) - FALL 2021-22/Lego/themes.csv.gz")
+
+inventory_minifigs <- read_csv("~/Desktop/Math 250 (Tutorial) - FALL 2021-22/Lego/inventory_minifigs.csv.gz")
+view(inventory_minifigs)
+
+inventory_parts <- read_csv("~/Desktop/Math 250 (Tutorial) - FALL 2021-22/Lego/inventory_parts.csv.gz")
+
+sets <- read_csv("~/Desktop/Math 250 (Tutorial) - FALL 2021-22/Lego/sets.csv.gz")
+
+inventory_sets <- read_csv("~/Desktop/Math 250 (Tutorial) - FALL 2021-22/Lego/inventory_sets.csv.gz")
+
+part_categories <- read_csv("~/Desktop/Math 250 (Tutorial) - FALL 2021-22/Lego/part_categories.csv.gz")
+
+inventories <- read_csv("~/Desktop/Math 250 (Tutorial) - FALL 2021-22/Lego/inventories.csv.gz")
+
+parts <- read_csv("~/Desktop/Math 250 (Tutorial) - FALL 2021-22/Lego/parts.csv.gz")
+```
+
+Here are the first 3 rows of the colors, themes, and sets data
+```{r tables, echo = FALSE}
+kable(colors[1:3,], caption = "colors data")
+kable(themes[1:3,], caption = "themes data")
+kable(sets[1:3,], caption = "sets data")
+```
+
+## Wrangling Data
+There were multiple data tables that I chose to wrangle together for the purpose of exploration, the first being the themes and the sets data tables. Through combining these and using a bit of data manipulation, we can find the average number of parts in a Lego set by year.
+
+```{r themes and sets}
+themes_plus_sets <- inner_join(sets, themes, by = c("theme_id" = "id"))
+
+themes_plus_sets <- themes_plus_sets %>%
+  group_by(year) %>%
+  mutate(NumPartsPerYear = sum(num_parts)) %>%
+  mutate(SetsPerYear = n_distinct(theme_id)) %>%
+  mutate(AvgPartsPerYear = NumPartsPerYear / SetsPerYear)
+
+themes_sets_summarized <-themes_plus_sets %>%
+  group_by(year) %>%
+  summarize(AvgPartsPerYear = unique(AvgPartsPerYear))
+
+kable(themes_plus_sets[1:3,], caption = "Themes and Sets data combined")
+kable(themes_sets_summarized[1:3,], caption = "Easier to read")
+```
+
+Next I combined the part_categories and parts data tables which allows us to group by part categories and see the materials used for each one. This is not necessarily important in terms of the questions I try to answer, but it was interesting to visualize, which we will see later on, and worth exploring.
+```{r part cags and parts}
+part_categories_plus_parts <- inner_join(parts, part_categories, by = c("part_cat_id" = "id"))
+part_categories_plus_parts$part_cat_id <- as.integer(part_categories_plus_parts$part_cat_id)
+
+kable(part_categories_plus_parts[1:3,], caption = "Part Categories plus Parts")
+```
+
+I then combined the inventory_parts and colors data tables. These tables were key to wrangle in order to answer my second question. It is important to note that I filtered the table to only include more popular colors such as red, blue, white, black, yellow, and orange.
+```{r inven parts and colors}
+inventory_parts_plus_colors <- inner_join(inventory_parts, colors, by = c("color_id" = "id"))
+
+inventory_parts_plus_colors_filtered <- inventory_parts_plus_colors %>%
+  filter(name == "Red" | name == "Blue" | name == "White" | name == "Black"
+         | name == "Yellow" | name == "Orange")
+
+kable(inventory_parts_plus_colors_filtered[1:3,], caption = "Inventory Parts and Colors combined")
+```
+
+My last goal of combining data tables was to get the spare pieces of Legos combined with colors. This was a little trickier because the data did not come with a spare_pieces table, so I had to create one by filtering inventory_parts. I filtered the colors to be the same popular ones as before.
+```{r spare pieces and colors}
+spare_pieces <- inventory_parts %>%
+  filter(is_spare == 'TRUE')
+
+spare_pieces_colors <- inner_join(spare_pieces, colors, by = c("color_id" = "id"))
+
+spare_pieces_colors <- spare_pieces_colors %>%
+  filter(name == "Red" | name == "Blue" | name == "White" | name == "Black"
+         | name == "Yellow" | name == "Orange")
+
+kable(spare_pieces_colors[1:3,], caption = "Spare Pieces and Colors combined")
+```
+
+## Data Visualizations
+
+I first visualized the number of parts per Lego set per year using two plots. Based off of these graphs alone, I can already predict the answer to my first question.
+```{r parts per year graphs}
+ggplot(data = themes_plus_sets, mapping = aes(x = year, y = AvgPartsPerYear, group = year)) +
+  geom_bar(stat = "summary") + 
+  labs(x = "Year", y = "Average Number of Parts per Set", title = "Average Number of Lego Parts per Set per Year") + 
+  theme_minimal()
+ggplot(data = themes_sets_summarized, mapping = aes(x = year, y = AvgPartsPerYear)) +
+  geom_line(stat = "identity") + 
+  labs(x = "Year", y = "Average Number of Parts per Set", title = "Average Number of Lego Parts per Set per Year") + 
+  theme_minimal()
+```
+
+Next, I looked at the count of part materials. This was mostly out of curiosity and the results are not too surprising.
+```{r part materials graphs}
+ggplot(data = part_categories_plus_parts, aes(x = part_material, y = str_count(part_material), fill = part_material)) +
+  geom_col() +
+  labs(x = "Part Material", y = "Count", title = "Visualization of Lego Piece Materials") +
+  theme_minimal()
+```
+
+Then came visualizations of the most popular colors: both for normal parts and spare parts.
+```{r parts and colors graphs}
+ggplot(inventory_parts_plus_colors_filtered, aes(x = name, y = quantity, fill = name)) +
+  geom_col() + 
+  scale_fill_manual(values = c("Black", "Blue", "Orange", "Red", "Gray", "Yellow")) + 
+  labs(x = "Lego Color", y = "Quantity", title = "Lego Colors of All Pieces") +
+  theme_minimal()
+
+ggplot(spare_pieces_colors, aes(x = name, y = quantity, fill = name)) +
+  geom_col() + 
+  scale_fill_manual(values = c("Black", "Blue", "Orange", "Red", "Gray", "Yellow")) + 
+  labs(x = "Lego Color", y = "Number of Spare Pieces", title = "Lego Colors of Spare Pieces") +
+  theme_minimal()
+```
+
+## Statistical Inferences
+
+#### First Question:
+The first question that I wanted to answer through this data was: is there a relationship between the year a Lego set was created and the number of parts in that Lego set? I chose to use an ANOVA test to determine the answer.
+
+```{r ANOVA test pieces}
+lego_pieces_aov <- aov(formula = NumPartsPerYear ~ year, data = themes_plus_sets)
+summary(lego_pieces_aov)
+```
+
+#### Second Question:
+I also used an ANOVA test to determine the answer to my second question: is there a relationship between the colors of Legos given they are a spare part?
+```{r ANOVA test colors}
+color_spare_aov <- aov(formula = quantity ~ name, data = spare_pieces_colors)
+summary(color_spare_aov)
+```
+
+
+## Conclusion
+
+I had a great experience working with this data set and coming up with open ended questions that could be answered through statistical analysis. Deciding which data sets needed to be joint together turned out to be the biggest challenge. As seen in the work above, not all the data was needed to reach my conclusions. The null hypotheses for both of my questions were: the average number of pieces per Lego set is the same for every year, and the number of spare pieces per Lego set would be the same for each popular color. The charts above gave what seemed to be clear answers, and that is that the null hypothesis would be rejected. However, I could not give a confident answer without using an ANOVA test.
+
+The ANOVA tests both gave clear evidence to reject the null hypothesis. For the average pieces/year, the F value was 41996, and the P value was far below 0.05. This means that the average number of parts per Lego set does correlate to the year the Lego set was created. Again, this is supported by looking at the numbers in the tables as well as the visualizations.
+
+For the number of spare pieces given a specific color, we also received evidence to reject the null hypothesis. An F value of 33.16 and a P value far less than 0.05 means that in all likelihood, the average number of spare pieces in a set is correlated to the color of that piece. In other words, given a random Lego set, it is likely that not all popular colors will have the same number of spare parts.
+
+
+
+
+
